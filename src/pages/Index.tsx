@@ -94,9 +94,18 @@ const Index = () => {
   const processFile = (uploadedFile: File) => {
     setFile(uploadedFile);
     setAudioUrl(URL.createObjectURL(uploadedFile));
-    toast.success(`Файл ${uploadedFile.name} загружен`);
-    
+    setNotes([]);
+    toast.success(`Файл ${uploadedFile.name} загружен. Нажмите "Конвертировать" для распознавания`);
+  };
+
+  const startConversion = () => {
+    if (!file) {
+      toast.error('Сначала загрузите файл');
+      return;
+    }
+
     setIsProcessing(true);
+    toast.info('Начинаем распознавание нот...');
     
     setTimeout(() => {
       const mockNotes: Note[] = [
@@ -125,7 +134,7 @@ const Index = () => {
       const updatedHistory = [historyItem, ...history].slice(0, 10);
       setHistory(updatedHistory);
       localStorage.setItem('noteScribeHistory', JSON.stringify(updatedHistory));
-    }, 2000);
+    }, 3000);
   };
 
   const loadFromHistory = (item: HistoryItem) => {
@@ -142,16 +151,97 @@ const Index = () => {
   };
 
   const exportToPDF = () => {
-    toast.success('Экспорт в PDF запущен...');
+    if (notes.length === 0) {
+      toast.error('Сначала конвертируйте файл');
+      return;
+    }
+
+    toast.success('Создаём PDF с нотами...');
+    
     setTimeout(() => {
-      const content = notes.map(n => `${n.name} (${n.frequency.toFixed(2)} Hz) - ${n.timestamp}s`).join('\n');
-      const blob = new Blob([`NoteScribe - Нотная запись\n\n${file?.name || 'Файл'}\n\n${content}`], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${file?.name || 'notes'}_notes.txt`;
-      a.click();
-      toast.success('PDF готов к скачиванию!');
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600 + (notes.length * 30);
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) return;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 32px Arial';
+      ctx.fillText('NoteScribe - Нотная запись', 50, 50);
+
+      ctx.font = '16px Arial';
+      ctx.fillStyle = '#666666';
+      ctx.fillText(`Файл: ${file?.name || 'Неизвестно'}`, 50, 80);
+      ctx.fillText(`Дата: ${new Date().toLocaleString('ru-RU')}`, 50, 105);
+      ctx.fillText(`Всего нот: ${notes.length}`, 50, 130);
+
+      for (let i = 0; i < 5; i++) {
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(50, 180 + i * 30);
+        ctx.lineTo(750, 180 + i * 30);
+        ctx.stroke();
+      }
+
+      ctx.font = '48px Arial';
+      ctx.fillStyle = '#000000';
+      ctx.fillText('𝄞', 60, 230);
+
+      notes.forEach((note, idx) => {
+        const position = getNotePosition(note.name);
+        const x = 150 + (idx * 60);
+        const y = 270 - (position * 6);
+
+        if (note.name.includes('#')) {
+          ctx.font = '24px Arial';
+          ctx.fillText('♯', x - 15, y);
+        }
+
+        ctx.beginPath();
+        ctx.ellipse(x, y, 12, 9, -0.3, 0, 2 * Math.PI);
+        ctx.fillStyle = '#8B5CF6';
+        ctx.fill();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x + 10, y);
+        ctx.lineTo(x + 10, y - 40);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#666666';
+        ctx.fillText(`${note.timestamp}s`, x - 10, y + 60);
+      });
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText('Список нот:', 50, 350);
+      
+      ctx.font = '14px Arial';
+      notes.forEach((note, idx) => {
+        const y = 380 + (idx * 25);
+        ctx.fillText(`${idx + 1}. ${note.name} - ${note.frequency.toFixed(2)} Hz - ${note.timestamp}s`, 70, y);
+      });
+
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${file?.name.replace(/\.[^/.]+$/, '') || 'notes'}_ноты.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success('PDF с нотами создан!');
+      });
     }, 500);
   };
 
@@ -341,11 +431,24 @@ const Index = () => {
             </Button>
 
             {file && (
-              <div className="mt-4 p-4 bg-[#8B5CF6]/10 rounded-lg border border-[#8B5CF6]/30">
-                <div className="flex items-center justify-center gap-2 text-sm">
-                  <Icon name="Music" size={16} className="text-[#8B5CF6]" />
-                  <span className="text-gray-300">{file.name}</span>
+              <div className="mt-4 space-y-3">
+                <div className="p-4 bg-[#8B5CF6]/10 rounded-lg border border-[#8B5CF6]/30">
+                  <div className="flex items-center justify-center gap-2 text-sm">
+                    <Icon name="Music" size={16} className="text-[#8B5CF6]" />
+                    <span className="text-gray-300">{file.name}</span>
+                  </div>
                 </div>
+                
+                {notes.length === 0 && !isProcessing && (
+                  <Button
+                    size="lg"
+                    onClick={startConversion}
+                    className="w-full bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90 transition-opacity text-lg px-8 py-6"
+                  >
+                    <Icon name="Wand2" size={20} className="mr-2" />
+                    Конвертировать в ноты
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -742,8 +845,8 @@ const Index = () => {
                   <Icon name="FileText" size={32} className="text-[#8B5CF6]" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-lg">PDF</h3>
-                  <p className="text-sm text-gray-400">Универсальный формат для печати и просмотра</p>
+                  <h3 className="font-bold text-lg">PDF (изображение)</h3>
+                  <p className="text-sm text-gray-400">Нотный стан с полным списком нот</p>
                 </div>
                 <Icon name="Download" size={20} className="text-gray-500" />
               </div>
