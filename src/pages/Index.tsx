@@ -10,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface Note {
   name: string;
@@ -35,6 +37,9 @@ const Index = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editedNote, setEditedNote] = useState<Note>({ name: '', frequency: 0, timestamp: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -150,6 +155,42 @@ const Index = () => {
     }, 500);
   };
 
+  const openEditDialog = (index: number) => {
+    setEditingIndex(index);
+    setEditedNote({ ...notes[index] });
+    setIsEditDialogOpen(true);
+  };
+
+  const openAddDialog = () => {
+    setEditingIndex(null);
+    setEditedNote({ name: 'C4', frequency: 261.63, timestamp: 0 });
+    setIsEditDialogOpen(true);
+  };
+
+  const saveNote = () => {
+    if (!editedNote.name || editedNote.frequency <= 0 || editedNote.timestamp < 0) {
+      toast.error('Заполните все поля корректно');
+      return;
+    }
+
+    if (editingIndex !== null) {
+      const updatedNotes = [...notes];
+      updatedNotes[editingIndex] = editedNote;
+      setNotes(updatedNotes);
+      toast.success('Нота обновлена!');
+    } else {
+      setNotes([...notes, editedNote].sort((a, b) => a.timestamp - b.timestamp));
+      toast.success('Нота добавлена!');
+    }
+    setIsEditDialogOpen(false);
+  };
+
+  const deleteNote = (index: number) => {
+    const updatedNotes = notes.filter((_, i) => i !== index);
+    setNotes(updatedNotes);
+    toast.success('Нота удалена!');
+  };
+
   const pianoKeys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
   return (
@@ -263,14 +304,42 @@ const Index = () => {
                 {notes.map((note, idx) => (
                   <div
                     key={idx}
-                    className="p-4 bg-gradient-to-br from-[#8B5CF6]/20 to-[#D946EF]/20 rounded-xl border border-[#8B5CF6]/30 hover:border-[#8B5CF6] transition-all hover:scale-105"
+                    className="group relative p-4 bg-gradient-to-br from-[#8B5CF6]/20 to-[#D946EF]/20 rounded-xl border border-[#8B5CF6]/30 hover:border-[#8B5CF6] transition-all"
                   >
                     <div className="text-3xl font-bold text-[#D946EF] mb-1">{note.name}</div>
                     <div className="text-xs text-gray-400">{note.frequency.toFixed(2)} Hz</div>
                     <div className="text-xs text-gray-500 mt-1">{note.timestamp}s</div>
+                    
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditDialog(idx)}
+                        className="h-7 w-7 p-0 hover:bg-[#8B5CF6]/20"
+                      >
+                        <Icon name="Pencil" size={14} className="text-[#8B5CF6]" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteNote(idx)}
+                        className="h-7 w-7 p-0 hover:bg-red-500/20"
+                      >
+                        <Icon name="Trash2" size={14} className="text-red-500" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
+              
+              <Button
+                onClick={openAddDialog}
+                variant="outline"
+                className="w-full mt-4 border-[#8B5CF6] text-[#8B5CF6] hover:bg-[#8B5CF6]/10 border-dashed"
+              >
+                <Icon name="Plus" size={20} className="mr-2" />
+                Добавить ноту вручную
+              </Button>
             </Card>
 
             <Card className="glass-effect p-8">
@@ -472,6 +541,85 @@ const Index = () => {
                 <Icon name="Download" size={20} className="text-gray-500" />
               </div>
             </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="bg-[#1A1F2C] border-[#8B5CF6]/30">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Edit" size={24} className="text-[#8B5CF6]" />
+              {editingIndex !== null ? 'Редактировать ноту' : 'Добавить ноту'}
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Укажите параметры ноты для точной нотной записи
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="note-name" className="text-sm font-medium">
+                Название ноты
+              </Label>
+              <Input
+                id="note-name"
+                value={editedNote.name}
+                onChange={(e) => setEditedNote({ ...editedNote, name: e.target.value })}
+                placeholder="Например: C4, D#5, A3"
+                className="bg-[#222747] border-[#8B5CF6]/30 focus:border-[#8B5CF6]"
+              />
+              <p className="text-xs text-gray-500">Формат: нота + октава (C4, D#5)</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="note-frequency" className="text-sm font-medium">
+                Частота (Hz)
+              </Label>
+              <Input
+                id="note-frequency"
+                type="number"
+                step="0.01"
+                value={editedNote.frequency}
+                onChange={(e) => setEditedNote({ ...editedNote, frequency: parseFloat(e.target.value) })}
+                placeholder="261.63"
+                className="bg-[#222747] border-[#8B5CF6]/30 focus:border-[#8B5CF6]"
+              />
+              <p className="text-xs text-gray-500">Частота звука в герцах</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="note-timestamp" className="text-sm font-medium">
+                Время (секунды)
+              </Label>
+              <Input
+                id="note-timestamp"
+                type="number"
+                step="0.1"
+                value={editedNote.timestamp}
+                onChange={(e) => setEditedNote({ ...editedNote, timestamp: parseFloat(e.target.value) })}
+                placeholder="0.5"
+                className="bg-[#222747] border-[#8B5CF6]/30 focus:border-[#8B5CF6]"
+              />
+              <p className="text-xs text-gray-500">Момент появления ноты</p>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={saveNote}
+                className="flex-1 bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90"
+              >
+                <Icon name="Save" size={18} className="mr-2" />
+                Сохранить
+              </Button>
+              <Button
+                onClick={() => setIsEditDialogOpen(false)}
+                variant="outline"
+                className="flex-1 border-[#8B5CF6]/30 hover:bg-[#8B5CF6]/10"
+              >
+                Отмена
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
