@@ -40,7 +40,10 @@ const Index = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedNote, setEditedNote] = useState<Note>({ name: '', frequency: 0, timestamp: 0 });
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(-1);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     const savedHistory = localStorage.getItem('noteScribeHistory');
@@ -191,6 +194,70 @@ const Index = () => {
     toast.success('Нота удалена!');
   };
 
+  const playNotes = async () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      setCurrentNoteIndex(-1);
+      return;
+    }
+
+    setIsPlaying(true);
+    
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+
+    const audioContext = audioContextRef.current;
+    let keepPlaying = true;
+
+    const stopPlayback = () => {
+      keepPlaying = false;
+    };
+
+    for (let i = 0; i < notes.length; i++) {
+      if (!keepPlaying) break;
+      
+      setCurrentNoteIndex(i);
+      const note = notes[i];
+      
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = note.frequency;
+      oscillator.type = 'sine';
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.5);
+      
+      await new Promise(resolve => setTimeout(resolve, 600));
+    }
+
+    setIsPlaying(false);
+    setCurrentNoteIndex(-1);
+  };
+
+  const getNotePosition = (noteName: string): number => {
+    const noteMap: { [key: string]: number } = {
+      'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6
+    };
+    
+    const baseNote = noteName.replace(/[#0-9]/g, '');
+    const octave = parseInt(noteName.match(/\d+/)?.[0] || '4');
+    const isSharp = noteName.includes('#');
+    
+    const basePosition = noteMap[baseNote] || 0;
+    const octaveOffset = (octave - 4) * 7;
+    const sharpOffset = isSharp ? 0.5 : 0;
+    
+    return basePosition + octaveOffset + sharpOffset;
+  };
+
   const pianoKeys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
   return (
@@ -295,6 +362,105 @@ const Index = () => {
         {notes.length > 0 && !isProcessing && (
           <>
             <Card className="glass-effect p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <Icon name="Music4" size={24} className="text-[#8B5CF6]" />
+                  <h3 className="text-2xl font-bold">Нотный стан</h3>
+                </div>
+                <Button
+                  onClick={playNotes}
+                  className={`${
+                    isPlaying 
+                      ? 'bg-red-500 hover:bg-red-600' 
+                      : 'bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90'
+                  }`}
+                >
+                  <Icon name={isPlaying ? 'Square' : 'Play'} size={18} className="mr-2" />
+                  {isPlaying ? 'Остановить' : 'Проиграть ноты'}
+                </Button>
+              </div>
+
+              <div className="mb-8 bg-white/5 rounded-xl p-6 overflow-x-auto">
+                <div className="relative min-w-[600px] h-64">
+                  {[0, 1, 2, 3, 4].map((line) => (
+                    <div
+                      key={line}
+                      className="absolute w-full border-t-2 border-gray-600"
+                      style={{ top: `${40 + line * 40}px` }}
+                    />
+                  ))}
+                  
+                  <div className="absolute left-4 top-8 text-6xl text-gray-400">
+                    𝄞
+                  </div>
+
+                  <div className="absolute left-20 top-0 right-4 h-full flex items-center gap-4">
+                    {notes.map((note, idx) => {
+                      const position = getNotePosition(note.name);
+                      const topOffset = 180 - (position * 10);
+                      const isCurrentNote = currentNoteIndex === idx;
+                      const isSharp = note.name.includes('#');
+                      
+                      return (
+                        <div
+                          key={idx}
+                          className="relative flex flex-col items-center"
+                          style={{ animation: isCurrentNote ? 'pulse 0.6s ease-in-out' : 'none' }}
+                        >
+                          {topOffset < 40 && (
+                            <div
+                              className="absolute w-12 border-t-2 border-gray-500"
+                              style={{ top: `${topOffset}px` }}
+                            />
+                          )}
+                          {topOffset > 200 && (
+                            <div
+                              className="absolute w-12 border-t-2 border-gray-500"
+                              style={{ top: `${topOffset}px` }}
+                            />
+                          )}
+                          
+                          {isSharp && (
+                            <div
+                              className="absolute text-2xl font-bold"
+                              style={{ 
+                                top: `${topOffset - 8}px`, 
+                                left: '-12px',
+                                color: isCurrentNote ? '#D946EF' : '#8B5CF6'
+                              }}
+                            >
+                              ♯
+                            </div>
+                          )}
+                          
+                          <div
+                            className={`absolute w-8 h-6 rounded-full border-4 transform rotate-[-20deg] transition-all ${
+                              isCurrentNote 
+                                ? 'bg-[#D946EF] border-[#D946EF] scale-125' 
+                                : 'bg-[#8B5CF6] border-[#8B5CF6]'
+                            }`}
+                            style={{ top: `${topOffset - 3}px` }}
+                          />
+                          
+                          <div
+                            className={`absolute w-1 h-16 ${
+                              isCurrentNote ? 'bg-[#D946EF]' : 'bg-[#8B5CF6]'
+                            }`}
+                            style={{ top: `${topOffset - 3}px`, left: '26px' }}
+                          />
+                          
+                          <div className="absolute text-xs text-gray-400" style={{ top: '240px' }}>
+                            {note.timestamp}s
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="glass-effect p-8">
               <div className="flex items-center gap-3 mb-6">
                 <Icon name="ListMusic" size={24} className="text-[#8B5CF6]" />
                 <h3 className="text-2xl font-bold">Распознанные ноты</h3>
@@ -304,9 +470,15 @@ const Index = () => {
                 {notes.map((note, idx) => (
                   <div
                     key={idx}
-                    className="group relative p-4 bg-gradient-to-br from-[#8B5CF6]/20 to-[#D946EF]/20 rounded-xl border border-[#8B5CF6]/30 hover:border-[#8B5CF6] transition-all"
+                    className={`group relative p-4 bg-gradient-to-br from-[#8B5CF6]/20 to-[#D946EF]/20 rounded-xl border transition-all ${
+                      currentNoteIndex === idx 
+                        ? 'border-[#D946EF] border-2 scale-105 shadow-lg shadow-[#D946EF]/50' 
+                        : 'border-[#8B5CF6]/30 hover:border-[#8B5CF6]'
+                    }`}
                   >
-                    <div className="text-3xl font-bold text-[#D946EF] mb-1">{note.name}</div>
+                    <div className={`text-3xl font-bold mb-1 transition-colors ${
+                      currentNoteIndex === idx ? 'text-[#D946EF]' : 'text-[#8B5CF6]'
+                    }`}>{note.name}</div>
                     <div className="text-xs text-gray-400">{note.frequency.toFixed(2)} Hz</div>
                     <div className="text-xs text-gray-500 mt-1">{note.timestamp}s</div>
                     
@@ -376,13 +548,38 @@ const Index = () => {
 
             {audioUrl && (
               <Card className="glass-effect p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <Icon name="Headphones" size={20} className="text-[#8B5CF6]" />
-                  <h4 className="font-semibold">Прослушать оригинал</h4>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <Icon name="Headphones" size={20} className="text-[#8B5CF6]" />
+                      <h4 className="font-semibold">Прослушать оригинал</h4>
+                    </div>
+                    <audio controls className="w-full" src={audioUrl}>
+                      Ваш браузер не поддерживает аудио элемент.
+                    </audio>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-[#8B5CF6]/20">
+                    <div className="flex items-center gap-3 mb-3">
+                      <Icon name="Music" size={20} className="text-[#D946EF]" />
+                      <h4 className="font-semibold">Синтезированная мелодия</h4>
+                    </div>
+                    <Button
+                      onClick={playNotes}
+                      className={`w-full ${
+                        isPlaying 
+                          ? 'bg-red-500 hover:bg-red-600' 
+                          : 'bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90'
+                      }`}
+                    >
+                      <Icon name={isPlaying ? 'Square' : 'Play'} size={18} className="mr-2" />
+                      {isPlaying ? 'Остановить воспроизведение' : 'Проиграть распознанные ноты'}
+                    </Button>
+                    <p className="text-xs text-gray-400 mt-2 text-center">
+                      Сравните оригинал с синтезированным звуком из нот
+                    </p>
+                  </div>
                 </div>
-                <audio controls className="w-full" src={audioUrl}>
-                  Ваш браузер не поддерживает аудио элемент.
-                </audio>
               </Card>
             )}
 
