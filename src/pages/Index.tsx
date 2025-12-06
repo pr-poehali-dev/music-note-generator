@@ -12,6 +12,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Note {
   name: string;
@@ -42,6 +50,9 @@ const Index = () => {
   const [editedNote, setEditedNote] = useState<Note>({ name: '', frequency: 0, timestamp: 0 });
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(-1);
+  const [tempo, setTempo] = useState<number>(100);
+  const [waveform, setWaveform] = useState<OscillatorType>('sine');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -208,14 +219,14 @@ const Index = () => {
     }
 
     const audioContext = audioContextRef.current;
-    let keepPlaying = true;
-
-    const stopPlayback = () => {
-      keepPlaying = false;
-    };
+    const noteDuration = 600 / (tempo / 100);
 
     for (let i = 0; i < notes.length; i++) {
-      if (!keepPlaying) break;
+      if (!isPlaying && i > 0) {
+        setIsPlaying(false);
+        setCurrentNoteIndex(-1);
+        return;
+      }
       
       setCurrentNoteIndex(i);
       const note = notes[i];
@@ -227,15 +238,20 @@ const Index = () => {
       gainNode.connect(audioContext.destination);
       
       oscillator.frequency.value = note.frequency;
-      oscillator.type = 'sine';
+      oscillator.type = waveform;
       
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      const attackTime = 0.02;
+      const releaseTime = noteDuration / 1000 * 0.8;
+      
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + attackTime);
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime + releaseTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + releaseTime + 0.1);
       
       oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.5);
+      oscillator.stop(audioContext.currentTime + releaseTime + 0.1);
       
-      await new Promise(resolve => setTimeout(resolve, 600));
+      await new Promise(resolve => setTimeout(resolve, noteDuration));
     }
 
     setIsPlaying(false);
@@ -367,17 +383,27 @@ const Index = () => {
                   <Icon name="Music4" size={24} className="text-[#8B5CF6]" />
                   <h3 className="text-2xl font-bold">Нотный стан</h3>
                 </div>
-                <Button
-                  onClick={playNotes}
-                  className={`${
-                    isPlaying 
-                      ? 'bg-red-500 hover:bg-red-600' 
-                      : 'bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90'
-                  }`}
-                >
-                  <Icon name={isPlaying ? 'Square' : 'Play'} size={18} className="mr-2" />
-                  {isPlaying ? 'Остановить' : 'Проиграть ноты'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setIsSettingsOpen(true)}
+                    variant="outline"
+                    className="border-[#8B5CF6] text-[#8B5CF6] hover:bg-[#8B5CF6]/10"
+                  >
+                    <Icon name="Settings" size={18} className="mr-2" />
+                    Настройки
+                  </Button>
+                  <Button
+                    onClick={playNotes}
+                    className={`${
+                      isPlaying 
+                        ? 'bg-red-500 hover:bg-red-600' 
+                        : 'bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90'
+                    }`}
+                  >
+                    <Icon name={isPlaying ? 'Square' : 'Play'} size={18} className="mr-2" />
+                    {isPlaying ? 'Остановить' : 'Проиграть'}
+                  </Button>
+                </div>
               </div>
 
               <div className="mb-8 bg-white/5 rounded-xl p-6 overflow-x-auto">
@@ -815,6 +841,113 @@ const Index = () => {
                 className="flex-1 border-[#8B5CF6]/30 hover:bg-[#8B5CF6]/10"
               >
                 Отмена
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="bg-[#1A1F2C] border-[#8B5CF6]/30">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Settings" size={24} className="text-[#8B5CF6]" />
+              Настройки воспроизведения
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Настройте темп и тембр инструмента для проигрывания нот
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 mt-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">
+                  Темп воспроизведения
+                </Label>
+                <span className="text-sm text-[#8B5CF6] font-bold">{tempo}%</span>
+              </div>
+              <Slider
+                value={[tempo]}
+                onValueChange={(value) => setTempo(value[0])}
+                min={25}
+                max={200}
+                step={5}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Медленно (25%)</span>
+                <span>Нормально (100%)</span>
+                <span>Быстро (200%)</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-base font-medium">
+                Тембр инструмента
+              </Label>
+              <Select value={waveform} onValueChange={(value) => setWaveform(value as OscillatorType)}>
+                <SelectTrigger className="bg-[#222747] border-[#8B5CF6]/30 focus:border-[#8B5CF6]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1A1F2C] border-[#8B5CF6]/30">
+                  <SelectItem value="sine" className="cursor-pointer hover:bg-[#8B5CF6]/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6">
+                        <svg viewBox="0 0 24 24" className="text-[#8B5CF6]">
+                          <path d="M2 12 Q 6 6, 12 12 T 22 12" stroke="currentColor" fill="none" strokeWidth="2"/>
+                        </svg>
+                      </div>
+                      🎹 Пианино (Синусоида)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="square" className="cursor-pointer hover:bg-[#8B5CF6]/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6">
+                        <svg viewBox="0 0 24 24" className="text-[#8B5CF6]">
+                          <path d="M2 16 L6 16 L6 8 L12 8 L12 16 L18 16 L18 8 L22 8" stroke="currentColor" fill="none" strokeWidth="2"/>
+                        </svg>
+                      </div>
+                      🎸 Орган (Меандр)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="sawtooth" className="cursor-pointer hover:bg-[#8B5CF6]/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6">
+                        <svg viewBox="0 0 24 24" className="text-[#8B5CF6]">
+                          <path d="M2 16 L6 8 L6 16 L12 8 L12 16 L18 8 L18 16 L22 8" stroke="currentColor" fill="none" strokeWidth="2"/>
+                        </svg>
+                      </div>
+                      🎻 Струнные (Пилообразная)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="triangle" className="cursor-pointer hover:bg-[#8B5CF6]/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6">
+                        <svg viewBox="0 0 24 24" className="text-[#8B5CF6]">
+                          <path d="M2 16 L6 8 L12 16 L18 8 L22 16" stroke="currentColor" fill="none" strokeWidth="2"/>
+                        </svg>
+                      </div>
+                      🎺 Флейта (Треугольная)
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                Каждый тембр имитирует разные музыкальные инструменты
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-[#8B5CF6]/20">
+              <Button
+                onClick={() => {
+                  playNotes();
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full bg-gradient-to-r from-[#8B5CF6] to-[#D946EF] hover:opacity-90"
+              >
+                <Icon name="Play" size={18} className="mr-2" />
+                Проиграть с новыми настройками
               </Button>
             </div>
           </div>
